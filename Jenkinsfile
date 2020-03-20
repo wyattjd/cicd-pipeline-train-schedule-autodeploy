@@ -2,7 +2,7 @@ pipeline {
     agent any
     environment {
         DOCKER_IMAGE_NAME = "wjdlci/train-schedule"
-        CANARY_REPLICAS = 1
+        CANARY_REPLICAS = 0
     }
     stages {
         stage('Build') {
@@ -42,6 +42,9 @@ pipeline {
             when {
                 branch 'master'
             }
+            environment { 
+                CANARY_REPLICAS = 1
+            }
             steps {
                 kubernetesDeploy(
                     kubeconfigId: 'kubeconfig',
@@ -50,18 +53,19 @@ pipeline {
                 )
             }
         }
-        stage('SmokeTest'){
+        stage('SmokeTest') {
             when {
                 branch 'master'
             }
             steps {
                 script {
+                    sleep (time: 5)
                     def response = httpRequest (
                         url: "http://$KUBE_MASTER_IP:8081/",
                         timeout: 30
                     )
                     if (response.status != 200) {
-                        error("Smoke test failed.")
+                        error("Smoke test against canary deployment failed.")
                     }
                 }
             }
@@ -69,9 +73,6 @@ pipeline {
         stage('DeployToProduction') {
             when {
                 branch 'master'
-            }
-            environment { 
-                CANARY_REPLICAS = 0
             }
             steps {
                 milestone(1)
@@ -85,7 +86,7 @@ pipeline {
     }
     post {
         cleanup {
-            kubernetesDeploy(
+            kubernetesDeploy (
                 kubeconfigId: 'kubeconfig',
                 configs: 'train-schedule-kube-canary.yml',
                 enableConfigSubstitution: true
